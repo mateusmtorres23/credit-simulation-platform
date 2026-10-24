@@ -11,7 +11,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   app.register(assessmentRoutes, {
     prefix: "/evaluations",
-    slowResponseDelayMs: options.slowResponseDelayMs ?? 5000,
+    slowResponseDelayMs: options.slowResponseDelayMs ?? 8000,
   });
 
   app.get("/health", async () => {
