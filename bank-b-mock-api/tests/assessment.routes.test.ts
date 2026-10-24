@@ -63,6 +63,27 @@ describe("Bank B routes", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it.each(["normal", "slow", "unavailable"])("rejects sub-minimum amounts before running %s", async (scenario) => {
+    for (const amount_cents of [1, 99]) {
+      const response = await app.inject({ method: "POST", url: `/evaluations/${scenario}`, payload: makeAssessmentRequest({}, { amount_cents }) });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
+  it.each(["normal", "slow"])("serializes the minimum amount at the longest term in %s", async (scenario) => {
+    const response = await app.inject({ method: "POST", url: `/evaluations/${scenario}`, payload: makeAssessmentRequest({}, { amount_cents: 100, installments: 60 }) });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ decision: { code: "ACCEPTED", conditions: {
+      principal_cents: 100, installments: 60, monthly_rate_bps: 210, payment_cents: 3,
+    } } });
+  });
+
+  it("keeps income limits independent of the requested minimum", async () => {
+    const response = await app.inject({ method: "POST", url: "/evaluations/normal", payload: makeAssessmentRequest({ income_cents: 1 }, { amount_cents: 100 }) });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ decision: { code: "DECLINED", reasons: ["LOW_INCOME"] } });
+  });
+
   it("rejects malformed JSON", async () => {
     const response = await app.inject({ method: "POST", url: "/evaluations/normal", headers: { "content-type": "application/json" }, payload: "{" });
     expect(response.statusCode).toBe(400);

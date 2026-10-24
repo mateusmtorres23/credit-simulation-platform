@@ -68,6 +68,14 @@ describe("assessCredit", () => {
     }))).toEqual({ approved: false, reasons: ["INSTALLMENT_ABOVE_MARGIN"] });
   });
 
+  it("returns a positive installment for the minimum amount at every supported term", () => {
+    for (let termMonths = 6; termMonths <= 48; termMonths++) {
+      const result = assessCredit(makeAssessmentRequest({ requestedAmountCents: 100, termMonths }));
+      expect(result.approved).toBe(true);
+      if (result.approved) expect(result.offer.installmentCents).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   it("returns the same result without mutating the request", () => {
     const request = makeAssessmentRequest();
     const original = structuredClone(request);

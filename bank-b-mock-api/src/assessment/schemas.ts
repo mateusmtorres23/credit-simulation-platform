@@ -12,7 +12,7 @@ export const assessmentRequestSchema = Type.Object({
     employer_tax_id: Type.String({ pattern: "^[0-9]{14}$" }),
   }, { additionalProperties: false }),
   loan: Type.Object({
-    amount_cents: moneySchema,
+    amount_cents: Type.Integer({ minimum: 100, maximum: Number.MAX_SAFE_INTEGER }),
     installments: Type.Integer({ minimum: 1, maximum: 120 }),
   }, { additionalProperties: false }),
 }, { additionalProperties: false });

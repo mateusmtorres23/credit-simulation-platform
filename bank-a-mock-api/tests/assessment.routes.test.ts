@@ -69,6 +69,27 @@ describe("assessment routes", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it.each(["normal", "slow", "unavailable"])("rejects sub-minimum amounts before running %s", async (scenario) => {
+    for (const requestedAmountCents of [1, 99]) {
+      const response = await app.inject({ method: "POST", url: `/evaluations/${scenario}`, payload: makeAssessmentRequest({ requestedAmountCents }) });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
+  it.each(["normal", "slow"])("serializes the minimum amount at the longest term in %s", async (scenario) => {
+    const response = await app.inject({ method: "POST", url: `/evaluations/${scenario}`, payload: makeAssessmentRequest({ requestedAmountCents: 100, termMonths: 48 }) });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ approved: true, offer: {
+      amountCents: 100, termMonths: 48, monthlyInterestRateBps: 180, installmentCents: 3,
+    } });
+  });
+
+  it("keeps income and output money limits independent of the requested minimum", async () => {
+    const response = await app.inject({ method: "POST", url: "/evaluations/normal", payload: makeAssessmentRequest({ requestedAmountCents: 100, monthlyIncomeCents: 1 }) });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ approved: false, reasons: ["INCOME_BELOW_MINIMUM"] });
+  });
+
   it("rejects malformed JSON", async () => {
     const response = await app.inject({ method: "POST", url: "/evaluations/normal", headers: { "content-type": "application/json" }, payload: "{" });
     expect(response.statusCode).toBe(400);

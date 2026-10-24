@@ -49,6 +49,14 @@ describe("Bank B assessment", () => {
     expect(assessCredit(makeAssessmentRequest({ income_cents: 100_000 }, { amount_cents: 3_000_001, installments: 11 }))).toEqual({ decision: { code: "DECLINED", reasons: ["LOW_INCOME", "LIMIT_EXCEEDED", "INVALID_TERM"] } });
   });
 
+  it("returns a positive payment for the minimum amount at every supported term", () => {
+    for (let installments = 12; installments <= 60; installments++) {
+      const result = assessCredit(makeAssessmentRequest({}, { amount_cents: 100, installments }));
+      expect(result.decision.code).toBe("ACCEPTED");
+      if (result.decision.code === "ACCEPTED") expect(result.decision.conditions.payment_cents).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   it("is deterministic and preserves its input", () => {
     const input = makeAssessmentRequest();
     const original = structuredClone(input);

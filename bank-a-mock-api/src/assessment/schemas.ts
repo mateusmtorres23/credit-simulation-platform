@@ -14,7 +14,11 @@ export const assessmentRequestSchema = Type.Object(
     cpf: Type.String({ pattern: "^[0-9]{11}$" }),
     monthlyIncomeCents: positiveMoneySchema,
     employerCnpj: Type.String({ pattern: "^[0-9]{14}$" }),
-    requestedAmountCents: positiveMoneySchema,
+    requestedAmountCents: Type.Integer({
+      minimum: 100,
+      maximum: Number.MAX_SAFE_INTEGER,
+      description: "Requested amount in BRL cents; minimum BRL 1.00",
+    }),
     termMonths: Type.Integer({ minimum: 1, maximum: 120 }),
   },
   { additionalProperties: false },
