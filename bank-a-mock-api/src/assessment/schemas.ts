@@ -39,7 +39,7 @@ export const assessmentResponseSchema = Type.Union([
         {
           amountCents: positiveMoneySchema,
           termMonths: Type.Integer({ minimum: 1, maximum: 120 }),
-          monthlyInterestRateBps: Type.Integer({ minimum: 0 }),
+          monthlyInterestRateBps: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
           installmentCents: positiveMoneySchema,
         },
         { additionalProperties: false },
