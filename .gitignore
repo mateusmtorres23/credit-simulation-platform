@@ -1,3 +1,19 @@
+# Anotações locais de planejamento
 planejamento/
+
+# Node.js / TypeScript: dependências e build gerado
 node_modules/
 dist/
+
+# Python: ambiente virtual e bytecode gerado
+.venv/
+__pycache__/
+*.py[cod]
+
+# Pytest: cache de execução dos testes
+.pytest_cache/
+
+# Configuração local de ambiente (preservar o exemplo versionado)
+.env
+.env.*
+!.env.example
