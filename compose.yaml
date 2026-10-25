@@ -1,3 +1,18 @@
+x-credit-api: &credit-api
+  build: ./credit-simulation-api
+  image: credit-simulation-api:local
+  environment:
+    POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    BANK_A_BASE_URL: http://bank-a-mock-api:3001
+    BANK_B_BASE_URL: http://bank-b-mock-api:3002
+    BANK_TIMEOUT_SECONDS: ${BANK_TIMEOUT_SECONDS:-5}
+    ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-[]}
+    SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -15,6 +30,63 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5s
+
+  bank-a-mock-api:
+    build: ./bank-a-mock-api
+    ports:
+      - "127.0.0.1:${BANK_A_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "node", "--input-type=module", "-e", "const r = await fetch('http://127.0.0.1:3001/health'); process.exit(r.ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  bank-b-mock-api:
+    build: ./bank-b-mock-api
+    ports:
+      - "127.0.0.1:${BANK_B_PORT:-3002}:3002"
+    healthcheck:
+      test: ["CMD", "node", "--input-type=module", "-e", "const r = await fetch('http://127.0.0.1:3002/health'); process.exit(r.ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  migrate:
+    <<: *credit-api
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  credit-simulation-api:
+    <<: *credit-api
+    ports:
+      - "127.0.0.1:${CREDIT_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      bank-a-mock-api:
+        condition: service_healthy
+      bank-b-mock-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/simulations', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  cleanup:
+    <<: *credit-api
+    profiles: ["maintenance"]
+    command: ["python", "-m", "app.cleanup"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
 volumes:
   postgres_data:
