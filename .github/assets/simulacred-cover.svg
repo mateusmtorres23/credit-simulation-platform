@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">Simulacred</title>
+  <desc id="desc">Uma solicitação. Duas instituições. Resultados claros por banco.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#102a43"/>
+      <stop offset="1" stop-color="#163f52"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1fb6b0"/>
+      <stop offset="1" stop-color="#087f8c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="20" fill="url(#background)"/>
+  <circle cx="1090" cy="90" r="184" fill="none" stroke="#40d2ca" stroke-opacity=".10" stroke-width="42"/>
+  <circle cx="1090" cy="90" r="116" fill="none" stroke="#40d2ca" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M860 240h90v-95h160" fill="none" stroke="#63d9cf" stroke-opacity=".25" stroke-width="2"/>
+  <circle cx="860" cy="240" r="6" fill="#63d9cf" fill-opacity=".6"/>
+  <circle cx="1110" cy="145" r="6" fill="#63d9cf" fill-opacity=".6"/>
+  <rect x="60" y="52" width="58" height="58" rx="18" fill="url(#accent)"/>
+  <text x="89" y="92" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="700" text-anchor="middle">S</text>
+  <text x="138" y="88" fill="#8cddd7" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="3">SIMULAÇÃO DE CONSIGNADO</text>
+  <text x="60" y="181" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="65" font-weight="700" letter-spacing="-2">Simulacred</text>
+  <text x="62" y="230" fill="#e0edf3" font-family="Arial, Helvetica, sans-serif" font-size="24">Uma solicitação. Duas instituições.</text>
+  <text x="62" y="263" fill="#a8c5d4" font-family="Arial, Helvetica, sans-serif" font-size="17">Resultados claros por banco.</text>
+</svg>
