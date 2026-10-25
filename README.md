@@ -284,27 +284,11 @@ docker compose --profile maintenance run --rm cleanup
 
 Execute na raiz, com a imagem da API já construída e o banco disponível. O comando remove sessões expiradas e seus registros associados, preservando sessões válidas. Não é executado automaticamente pelo `up`.
 
-## Propostas planejadas — prioridade para mais uma semana
 
-### 1. Automatizar a limpeza dos registros expirados
-
-**Problema:** o acesso expira, mas a remoção física depende de intervenção manual.
-
-**Proposta:** agendar a execução do comando de limpeza já implementado.
-
-**Por quê:** torna a remoção recorrente e reduz a dependência de uma pessoa lembrar de executar a manutenção.
-
-### 2. Recuperar o histórico entre dispositivos
-
-**Problema:** trocar de navegador ou perder o cookie impede recuperar o histórico anterior.
-
-**Proposta:** definir e implementar identificação e recuperação que permitam consultar o histórico em outros dispositivos.
-
-**Por quê:** oferece continuidade de acesso, exigindo definir cuidadosamente como comprovar a identidade e recuperar a credencial.
 
 ## API
 
-A documentação interativa em `/docs` apresenta os schemas e respostas. As operações públicas são:
+A documentação interativa da API (Swagger UI), disponível em localhost:8000/docs, apresenta os schemas e as respostas. As operações públicas são:
 
 | Método | Rota | Resultado |
 | --- | --- | --- |
