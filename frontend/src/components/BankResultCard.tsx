@@ -1,10 +1,7 @@
 import type { BankResult } from '../types'
+import { formatMoney, formatRate } from '../formatting'
 
 const bankNames = { bank_a: 'Banco A', bank_b: 'Banco B' }
-const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-const formatMoney = (cents: number) => currency.format(cents / 100)
-const formatRate = (bps: number) => `${(bps / 100).toFixed(2).replace('.', ',')}% ao mês`
-
 export function BankResultCard({ result }: { result: BankResult }) {
   if (result.status === 'approved') {
     return (

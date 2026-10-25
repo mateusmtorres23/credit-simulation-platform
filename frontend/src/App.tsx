@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createSimulation } from './api'
 import { BankResultCard } from './components/BankResultCard'
 import { SimulationForm } from './components/SimulationForm'
+import { HistoryPage } from './components/HistoryPage'
 import type { SimulationFormValues, SimulationResponse } from './types'
 import './App.css'
 
@@ -9,6 +10,8 @@ function App() {
   const [results, setResults] = useState<SimulationResponse | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [operationError, setOperationError] = useState<string | null>(null)
+  const [view, setView] = useState<'simulate' | 'history'>('simulate')
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   async function handleSubmit(values: SimulationFormValues) {
     setIsSubmitting(true)
@@ -18,6 +21,7 @@ function App() {
     try {
       const response = await createSimulation(values)
       setResults(response)
+      setHistoryRefreshKey((key) => key + 1)
     } catch (error) {
       setOperationError(
         error instanceof Error
@@ -38,14 +42,13 @@ function App() {
           <span>octafin</span>
         </a>
         <nav aria-label="Navegação principal">
-          <a className="nav-link active" href="#simular">Simular</a>
-          <span className="nav-link disabled" aria-disabled="true">
-            Histórico <span className="nav-badge">indisponível</span>
-          </span>
+          <button className={`nav-link ${view === 'simulate' ? 'active' : ''}`} type="button" onClick={() => setView('simulate')}>Simular</button>
+          <button className={`nav-link ${view === 'history' ? 'active' : ''}`} type="button" onClick={() => setView('history')}>Histórico</button>
         </nav>
       </header>
 
       <main id="simular" className="page-content">
+        <div hidden={view !== 'simulate'}>
         <section className="intro" aria-labelledby="page-title">
           <p className="eyebrow">Simulação de consignado</p>
           <h1 id="page-title">Encontre as condições para o seu empréstimo</h1>
@@ -90,6 +93,8 @@ function App() {
             </div>
           </section>
         )}
+        </div>
+        {view === 'history' && <HistoryPage active refreshKey={historyRefreshKey} />}
       </main>
 
       <footer className="site-footer">

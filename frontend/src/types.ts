@@ -54,6 +54,32 @@ export interface SimulationResponse {
   results: [BankResult, BankResult]
 }
 
+export interface SimulationSummary {
+  id: string
+  created_at: string
+  requested_amount_cents: number
+  term_months: number
+  results: [{ bank: Bank; status: BankResult['status'] }, { bank: Bank; status: BankResult['status'] }]
+}
+
+export interface SimulationHistoryResponse {
+  items: SimulationSummary[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface SimulationDetailResponse {
+  id: string
+  created_at: string
+  request: {
+    monthly_income_cents: number
+    requested_amount_cents: number
+    term_months: number
+  }
+  results: [BankResult, BankResult]
+}
+
 export interface ApiFieldError {
   field: string
   code: string
