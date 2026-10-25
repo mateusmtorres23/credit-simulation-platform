@@ -19,4 +19,11 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.17.2",
+    "testcontainers[postgres]>=4.15.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+asyncio_mode = "strict"
+markers = ["integration: requires Docker and --run-integration"]
