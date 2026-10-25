@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import Settings
 from app.database import create_database_engine, create_session_factory
 from app.errors import register_exception_handlers
+from app.routers.simulation_router import router as simulation_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type"],
     )
     register_exception_handlers(application)
+    application.include_router(simulation_router)
     return application
 
 
