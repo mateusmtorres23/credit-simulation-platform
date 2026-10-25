@@ -12,7 +12,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_session_credential_roundtrip_and_expiration_boundary(db, service_clock):
-    service = SessionService(SessionRepository(db))
+    service = SessionService(SessionRepository(db), clock=lambda: service_clock.now)
     now = service_clock.now
     async with db.begin():
         prepared = await service.prepare_for_simulation(None, now=now)
@@ -34,14 +34,13 @@ async def test_session_credential_roundtrip_and_expiration_boundary(db, service_
 async def test_expired_session_is_replaced_without_modifying_previous_dates(
     db, service_clock
 ):
-    service = SessionService(SessionRepository(db))
+    service = SessionService(SessionRepository(db), clock=lambda: service_clock.now)
     now = service_clock.now
     async with db.begin():
         first = await service.prepare_for_simulation(None, now=now)
+    service_clock.now += timedelta(days=7)
     async with db.begin():
-        replacement = await service.prepare_for_simulation(
-            first.session.id, now=now + timedelta(days=7)
-        )
+        replacement = await service.prepare_for_simulation(first.session.id, now=now)
     assert replacement.session.id != first.session.id
     assert replacement.new_token != first.new_token
     assert first.session.created_at == now

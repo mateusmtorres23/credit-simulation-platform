@@ -9,7 +9,7 @@ from app.repositories.session_repository import SessionRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.schemas.bank_result_schema import ApprovedBankResult, BankOffer
 from app.schemas.request_schema import SimulationCreate, SimulationScenarios
-from app.services import simulation_history_service, simulation_service
+from app.services import session_service, simulation_history_service, simulation_service
 from app.services.session_service import SessionService
 from app.services.simulation_history_service import SimulationHistoryService
 from app.services.simulation_service import SimulationService
@@ -26,6 +26,7 @@ def service_clock(monkeypatch):
 
     monkeypatch.setattr(simulation_service, "datetime", Clock)
     monkeypatch.setattr(simulation_history_service, "datetime", Clock)
+    monkeypatch.setattr(session_service, "datetime", Clock)
     return clock
 
 
@@ -33,7 +34,9 @@ def service_clock(monkeypatch):
 def build_service(service_clock):
     def build(db):
         repo = SimulationRepository(db)
-        sessions = SessionService(SessionRepository(db))
+        sessions = SessionService(
+            SessionRepository(db), clock=lambda: service_clock.now
+        )
         banks = [AsyncMock(spec=BankAdapter), AsyncMock(spec=BankAdapter)]
         for bank, name in zip(banks, ["bank_a", "bank_b"], strict=True):
             bank.evaluate.return_value = ApprovedBankResult(

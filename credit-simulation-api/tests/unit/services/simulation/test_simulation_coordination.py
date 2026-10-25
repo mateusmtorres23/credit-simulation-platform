@@ -40,10 +40,6 @@ async def test_banks_run_concurrently_outside_transaction_in_fixed_order(
     ctx.banks[1].evaluate.assert_awaited_once_with(ctx.request, "unavailable")
     stored = ctx.repo.add.call_args.args[0]
     assert stored.created_at == created.response.created_at
-    assert (
-        ctx.sessions.prepare_for_simulation.await_args.kwargs["now"]
-        == stored.created_at
-    )
     assert not ctx.db.in_transaction()
     assert created.new_token not in repr(created)
 

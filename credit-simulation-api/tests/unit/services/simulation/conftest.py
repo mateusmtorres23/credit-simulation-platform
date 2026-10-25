@@ -23,8 +23,9 @@ async def simulation_context():
         repo = create_autospec(SimulationRepository, instance=True)
         sessions = create_autospec(SessionService, instance=True)
         sessions.find_active.return_value = None
+        sessions.current_time.return_value = datetime.now(UTC)
         sessions.prepare_for_simulation.return_value = PreparedSession(
-            make_session(id=uuid4()), "private-token"
+            make_session(id=uuid4()), datetime.now(UTC), "private-token"
         )
         banks = [create_autospec(BankAdapter, instance=True) for _ in range(2)]
         for bank, name in zip(banks, ["bank_a", "bank_b"], strict=True):
