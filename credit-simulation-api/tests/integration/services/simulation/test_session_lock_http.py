@@ -9,6 +9,7 @@ from session_lock_support import (
     backend_pid,
     http_payload,
     locked_session,
+    locked_simulations,
     session_by_token,
     wait_for_blocking,
 )
@@ -126,6 +127,94 @@ async def test_http_delete_rechecks_expiration_after_real_lock_wait(real_http_st
                 )
                 == record_id
             )
+    finally:
+        if operation is not None and not operation.done():
+            operation.cancel()
+            with suppress(asyncio.CancelledError):
+                await operation
+        async with ctx.engine.begin() as cleanup:
+            if session_id is not None:
+                await cleanup.execute(delete(Session).where(Session.id == session_id))
+
+
+async def test_http_history_rechecks_expiration_after_real_read_lock_wait(
+    real_http_stack,
+):
+    ctx = real_http_stack
+    session_id = None
+    operation = None
+    try:
+        created = await ctx.client.post("/api/simulations", json=http_payload())
+        assert created.status_code == 201
+        token = ctx.client.cookies.get("credit_session")
+        assert token
+        session = await session_by_token(ctx.engine, token)
+        session_id = session[0]
+        async with locked_simulations(ctx.engine) as locker:
+            locker_pid = await backend_pid(locker)
+            operation = asyncio.create_task(
+                ctx.client.get(
+                    "/api/simulations?page=3&page_size=2",
+                    headers={"Cookie": f"credit_session={token}"},
+                )
+            )
+            operation_pid = await wait_for_blocking(
+                ctx.engine, locker_pid, query_fragment="simulations"
+            )
+            assert operation_pid != locker_pid
+            assert not operation.done()
+            ctx.clock.now = session[3]
+        response = await asyncio.wait_for(operation, timeout=5)
+        assert response.status_code == 200
+        assert response.json() == {
+            "items": [],
+            "total": 0,
+            "page": 3,
+            "page_size": 2,
+        }
+        assert "set-cookie" not in response.headers
+    finally:
+        if operation is not None and not operation.done():
+            operation.cancel()
+            with suppress(asyncio.CancelledError):
+                await operation
+        async with ctx.engine.begin() as cleanup:
+            if session_id is not None:
+                await cleanup.execute(delete(Session).where(Session.id == session_id))
+
+
+async def test_http_detail_rechecks_expiration_after_real_read_lock_wait(
+    real_http_stack,
+):
+    ctx = real_http_stack
+    session_id = None
+    operation = None
+    try:
+        created = await ctx.client.post("/api/simulations", json=http_payload())
+        assert created.status_code == 201
+        token = ctx.client.cookies.get("credit_session")
+        assert token
+        session = await session_by_token(ctx.engine, token)
+        session_id = session[0]
+        simulation_id = created.json()["id"]
+        async with locked_simulations(ctx.engine) as locker:
+            locker_pid = await backend_pid(locker)
+            operation = asyncio.create_task(
+                ctx.client.get(
+                    f"/api/simulations/{simulation_id}",
+                    headers={"Cookie": f"credit_session={token}"},
+                )
+            )
+            operation_pid = await wait_for_blocking(
+                ctx.engine, locker_pid, query_fragment="simulations"
+            )
+            assert operation_pid != locker_pid
+            assert not operation.done()
+            ctx.clock.now = session[3]
+        response = await asyncio.wait_for(operation, timeout=5)
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "SIMULATION_NOT_FOUND"
+        assert "set-cookie" not in response.headers
     finally:
         if operation is not None and not operation.done():
             operation.cancel()

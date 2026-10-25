@@ -40,11 +40,24 @@ async def locked_session(engine, session_id, now):
         await locker.close()
 
 
+@asynccontextmanager
+async def locked_simulations(engine):
+    locker = AsyncSession(engine)
+    try:
+        await locker.begin()
+        await locker.execute(text("LOCK TABLE simulations IN ACCESS EXCLUSIVE MODE"))
+        yield locker
+    finally:
+        if locker.in_transaction():
+            await locker.rollback()
+        await locker.close()
+
+
 async def backend_pid(session):
     return await session.scalar(text("SELECT pg_backend_pid()"))
 
 
-async def wait_for_blocking(engine, locker_pid):
+async def wait_for_blocking(engine, locker_pid, query_fragment="FOR UPDATE"):
     async def observe():
         while True:
             async with engine.connect() as observer:
@@ -55,9 +68,9 @@ async def wait_for_blocking(engine, locker_pid):
                             SELECT pid, pg_blocking_pids(pid)
                             FROM pg_stat_activity
                             WHERE wait_event_type = 'Lock'
-                              AND query ILIKE '%FOR UPDATE%'
+                              AND query ILIKE :query_fragment
                             """
-                        )
+                        ).bindparams(query_fragment=f"%{query_fragment}%"),
                     )
                 ).one_or_none()
                 if row is not None and locker_pid in row[1]:
