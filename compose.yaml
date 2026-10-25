@@ -54,6 +54,7 @@ services:
   migrate:
     <<: *credit-api
     image: credit-simulation-api:local
+    pull_policy: never
     command: ["alembic", "upgrade", "head"]
     depends_on:
       postgres:
@@ -80,9 +81,28 @@ services:
       retries: 10
       start_period: 5s
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /
+    image: credit-simulation-frontend:local
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:8080"
+    depends_on:
+      credit-simulation-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   cleanup:
     <<: *credit-api
     image: credit-simulation-api:local
+    pull_policy: never
     profiles: ["maintenance"]
     command: ["python", "-m", "app.cleanup"]
     depends_on:
