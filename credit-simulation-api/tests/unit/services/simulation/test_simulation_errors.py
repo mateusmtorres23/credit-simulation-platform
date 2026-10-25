@@ -83,7 +83,7 @@ async def test_repository_failure_after_session_lookup_is_translated(
     ctx.sessions.revalidate_for_write.return_value = session
     failure = SQLAlchemyError("private-query-details")
     if operation == "list":
-        ctx.repo.list_for_session.side_effect = failure
+        ctx.repo.count_for_session.side_effect = failure
         call = ctx.service.list_history("a" * 43, SimulationPagination())
     elif operation == "detail":
         ctx.repo.find_for_session.side_effect = failure
@@ -95,3 +95,24 @@ async def test_repository_failure_after_session_lookup_is_translated(
         await call
     assert error.value.__cause__ is failure
     assert not ctx.db.in_transaction()
+
+
+async def test_history_skips_page_query_when_page_is_beyond_total(simulation_context):
+    ctx = simulation_context
+    session = make_session(id=uuid4())
+    ctx.sessions.find_active.return_value = session
+    ctx.repo.count_for_session.return_value = 2
+    pagination = SimulationPagination(
+        page=99999999999999999999999999999999, page_size=50
+    )
+
+    response = await ctx.service.list_history("a" * 43, pagination)
+
+    assert response.items == []
+    assert response.total == 2
+    assert response.page == pagination.page
+    assert response.page_size == pagination.page_size
+    ctx.repo.count_for_session.assert_awaited_once()
+    assert ctx.repo.count_for_session.await_args.args == (session.id,)
+    assert ctx.repo.count_for_session.await_args.kwargs["now"].tzinfo is not None
+    ctx.repo.list_for_session.assert_not_awaited()
