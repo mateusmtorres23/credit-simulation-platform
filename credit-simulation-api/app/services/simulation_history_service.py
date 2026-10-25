@@ -54,6 +54,9 @@ class SimulationHistoryService:
                             page_size=pagination.page_size,
                         )
                         items = [simulation_summary(record) for record in records]
+                    if session.expires_at <= self._sessions.current_time():
+                        items = []
+                        total = 0
                 response = SimulationHistoryResponse(
                     items=items,
                     total=total,
@@ -76,7 +79,10 @@ class SimulationHistoryService:
                 record = await self._repository.find_for_session(
                     simulation_id, session.id, now=now
                 )
-                if record is None:
+                if (
+                    record is None
+                    or session.expires_at <= self._sessions.current_time()
+                ):
                     raise SimulationNotFound()
                 response = simulation_detail(record)
             return response
