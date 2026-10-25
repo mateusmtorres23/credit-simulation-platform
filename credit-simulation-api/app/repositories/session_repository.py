@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Session
@@ -16,6 +16,19 @@ class SessionRepository:
     def add(self, session: Session) -> None:
         """Stage a new session without flushing or committing the transaction."""
         self._db.add(session)
+
+    async def delete_expired(self, *, now: datetime) -> int:
+        """Delete expired sessions and descendants, without committing.
+
+        Count in PostgreSQL to avoid loading credentials or all deleted IDs.
+        """
+        deleted = (
+            delete(Session)
+            .where(Session.expires_at <= now)
+            .returning(Session.id)
+            .cte("expired_sessions")
+        )
+        return (await self._db.scalar(select(func.count()).select_from(deleted))) or 0
 
     async def find_active_by_token_hash(
         self, token_hash: bytes, *, now: datetime
