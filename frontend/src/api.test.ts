@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSimulation } from './api'
+import { createSimulation, deleteSimulation, getSimulationDetail, listSimulations } from './api'
 import type { SimulationFormValues } from './types'
 
 const values: SimulationFormValues = {
@@ -17,6 +17,12 @@ const approved = (bank: 'bank_a' | 'bank_b') => ({
 })
 
 const response = { id: 'id-1', created_at: '2026-10-25T15:00:00Z', results: [approved('bank_a'), approved('bank_b')] }
+const summary = {
+  id: 'id-1', created_at: '2026-10-25T15:00:00Z', requested_amount_cents: 100000,
+  term_months: 12, results: [{ bank: 'bank_a', status: 'approved' }, { bank: 'bank_b', status: 'failed' }],
+}
+const history = { items: [summary], total: 1, page: 2, page_size: 10 }
+const detail = { ...response, request: { monthly_income_cents: 300000, requested_amount_cents: 100000, term_months: 12 } }
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -38,6 +44,50 @@ describe('createSimulation', () => {
         }),
       }),
     )
+  })
+
+  describe('histórico HTTP', () => {
+    it('consulta listagem, detalhe e exclusão com credentials include', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(JSON.stringify(history), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify(detail), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      await expect(listSimulations(2)).resolves.toEqual(history)
+      await expect(getSimulationDetail('id/1')).resolves.toEqual(detail)
+      await expect(deleteSimulation('id/1')).resolves.toBeUndefined()
+      expect(fetchMock.mock.calls[0]).toEqual([
+        'http://localhost:8000/api/simulations?page=2&page_size=10',
+        expect.objectContaining({ method: 'GET', credentials: 'include' }),
+      ])
+      expect(fetchMock.mock.calls[1]).toEqual([
+        'http://localhost:8000/api/simulations/id%2F1',
+        expect.objectContaining({ method: 'GET', credentials: 'include' }),
+      ])
+      expect(fetchMock.mock.calls[2]).toEqual([
+        'http://localhost:8000/api/simulations/id%2F1',
+        expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
+      ])
+    })
+
+    it('rejeita contratos incompatíveis, trata erros públicos e não lê JSON no 204', async () => {
+      const invalid = { ...history, items: [{ ...summary, term_months: 0 }] }
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(invalid), { status: 200 }))
+      await expect(listSimulations(1)).rejects.toThrow('resposta inesperada')
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { code: 'SIMULATION_NOT_FOUND', message: 'Não encontrado.' },
+      }), { status: 404 }))
+      await expect(getSimulationDetail('id-1')).rejects.toMatchObject({ code: 'SIMULATION_NOT_FOUND' })
+      const json = vi.fn().mockRejectedValue(new Error('must not read'))
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({ status: 204, json } as unknown as Response)
+      await deleteSimulation('id-1')
+      expect(json).not.toHaveBeenCalled()
+    })
+
+    it('propaga cancelamento sem convertê-lo em erro visível de rede', async () => {
+      const controller = new AbortController()
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new DOMException('Aborted', 'AbortError'))
+      await expect(listSimulations(1, 10, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    })
   })
 
   it('retorna sucesso e trata falha de rede', async () => {
