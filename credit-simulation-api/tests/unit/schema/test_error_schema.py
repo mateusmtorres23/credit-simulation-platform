@@ -16,6 +16,7 @@ from app.schemas.error_schema import (
         "SIMULATION_NOT_FOUND",
         "HISTORY_UNAVAILABLE",
         "SIMULATION_DELETE_FAILED",
+        "REQUEST_FORBIDDEN",
     ],
 )
 def test_application_errors_use_the_approved_envelope(code):
