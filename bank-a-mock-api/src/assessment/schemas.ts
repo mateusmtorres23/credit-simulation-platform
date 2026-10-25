@@ -10,7 +10,7 @@ const positiveMoneySchema = Type.Integer({
 export const assessmentRequestSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 150, pattern: "\\S" }),
-    email: Type.String({ format: "email", maxLength: 254 }),
+    email: Type.String({ format: "idn-email", maxLength: 254 }),
     cpf: Type.String({ pattern: "^[0-9]{11}$" }),
     monthlyIncomeCents: positiveMoneySchema,
     employerCnpj: Type.String({ pattern: "^[0-9]{14}$" }),

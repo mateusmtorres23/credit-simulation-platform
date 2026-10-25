@@ -6,7 +6,7 @@ const moneySchema = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER 
 export const assessmentRequestSchema = Type.Object({
   applicant: Type.Object({
     full_name: Type.String({ minLength: 1, maxLength: 150, pattern: "\\S" }),
-    email_address: Type.String({ format: "email", maxLength: 254 }),
+    email_address: Type.String({ format: "idn-email", maxLength: 254 }),
     tax_id: Type.String({ pattern: "^[0-9]{11}$" }),
     income_cents: moneySchema,
     employer_tax_id: Type.String({ pattern: "^[0-9]{14}$" }),
