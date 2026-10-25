@@ -63,6 +63,42 @@ async def test_real_banks_approve_and_saved_result_survives_history_and_deletion
 
 
 @pytest.mark.parametrize(
+    "email",
+    [
+        "josé@example.com",
+        "cliente@xn--bcher-kva.de",
+        "cliente@bücher.de",
+        "cliente@उदाहरण.भारत",
+        "cliente@" + "उदाहरण.भारत".encode("idna").decode("ascii"),
+    ],
+)
+async def test_real_banks_accept_api_supported_internationalized_emails(
+    real_api, e2e_payload, email
+):
+    response = await real_api.client.post(
+        "/api/simulations", json=e2e_payload | {"email": email}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert [(item["bank"], item["status"]) for item in body["results"]] == [
+        ("bank_a", "approved"),
+        ("bank_b", "approved"),
+    ]
+    assert all(
+        item["status"] != "failed"
+        and item.get("error", {}).get("code") != "INVALID_BANK_RESPONSE"
+        for item in body["results"]
+    )
+    history = await real_api.client.get("/api/simulations")
+    assert history.status_code == 200
+    assert history.json()["total"] == 1
+    detail = await real_api.client.get(f"/api/simulations/{body['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["results"] == body["results"]
+
+
+@pytest.mark.parametrize(
     "term,statuses", [(6, ["approved", "rejected"]), (60, ["rejected", "approved"])]
 )
 async def test_real_bank_policies_are_preserved_and_reasons_translated(

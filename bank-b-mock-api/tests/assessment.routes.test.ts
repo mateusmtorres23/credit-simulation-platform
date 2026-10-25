@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { domainToASCII } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { makeAssessmentRequest } from "./fixtures.js";
 
 describe("Bank B routes", () => {
   let app: FastifyInstance;
+  const hindiEmail = "cliente@उदाहरण.भारत";
+  const hindiPunycodeEmail = `cliente@${domainToASCII("उदाहरण.भारत")}`;
   beforeEach(async () => {
     app = buildApp({ slowResponseDelayMs: 60 });
     await app.ready();
@@ -17,6 +20,65 @@ describe("Bank B routes", () => {
     expect(response.json()).toEqual({ decision: { code: "ACCEPTED", conditions: {
       principal_cents: 100_000, installments: 12, monthly_rate_bps: 210, payment_cents: 9514,
     } } });
+  });
+
+  it.each([
+    "cliente@example.com",
+    "josé@example.com",
+    "cliente@bücher.de",
+    "cliente@xn--bcher-kva.de",
+    hindiEmail,
+    hindiPunycodeEmail,
+  ])("accepts internationalized email %s", async (email) => {
+    const normal = await app.inject({
+      method: "POST",
+      url: "/evaluations/normal",
+      payload: makeAssessmentRequest({ email_address: email }),
+    });
+    const slow = await app.inject({
+      method: "POST",
+      url: "/evaluations/slow",
+      payload: makeAssessmentRequest({ email_address: email }),
+    });
+    const unavailable = await app.inject({
+      method: "POST",
+      url: "/evaluations/unavailable",
+      payload: makeAssessmentRequest({ email_address: email }),
+    });
+
+    expect(normal.statusCode).toBe(200);
+    expect(normal.json().decision.code).toBe("ACCEPTED");
+    expect(slow.statusCode).toBe(200);
+    expect(slow.json()).toEqual(normal.json());
+    expect(unavailable.statusCode).toBe(503);
+  });
+
+  it("keeps the credit decision independent of the email", async () => {
+    const ascii = await app.inject({
+      method: "POST",
+      url: "/evaluations/normal",
+      payload: makeAssessmentRequest({ email_address: "cliente@example.com" }),
+    });
+    const internationalized = await app.inject({
+      method: "POST",
+      url: "/evaluations/normal",
+      payload: makeAssessmentRequest({ email_address: "josé@example.com" }),
+    });
+    expect(internationalized.statusCode).toBe(200);
+    expect(internationalized.json()).toEqual(ascii.json());
+  });
+
+  it("accepts a percent sign in the local part", async () => {
+    const request = makeAssessmentRequest();
+    const response = await app.inject({
+      method: "POST",
+      url: "/evaluations/normal",
+      payload: {
+        ...request,
+        applicant: { ...request.applicant, email_address: "cliente%tag@example.com" },
+      },
+    });
+    expect(response.statusCode).toBe(200);
   });
 
   it.each(["normal", "slow"])("returns business rejection as HTTP 200 in %s", async (scenario) => {
@@ -48,12 +110,57 @@ describe("Bank B routes", () => {
   });
 
   it.each([
-    { full_name: " " }, { email_address: "invalid" }, { tax_id: "123" },
+    { full_name: " " }, { email_address: "invalid" },
+    { email_address: "missing@" },
+    { email_address: "a".repeat(250) + "@a.com" },
+    { tax_id: "123" },
     { employer_tax_id: "123" }, { income_cents: 0 },
   ])("rejects invalid applicant fields: %j", async (overrides) => {
     const response = await app.inject({ method: "POST", url: "/evaluations/normal", payload: makeAssessmentRequest(overrides) });
     expect(response.statusCode).toBe(400);
   });
+
+  it("rejects an email with an invalid JSON type", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/evaluations/normal",
+      payload: {
+        ...makeAssessmentRequest(),
+        applicant: { ...makeAssessmentRequest().applicant, email_address: 123 },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it.each(["normal", "slow", "unavailable"])(
+    "rejects invalid email syntax before running %s",
+    async (scenario) => {
+      for (const email of [
+        "missing@",
+        "a".repeat(250) + "@a.com",
+        "cliente@-invalid.example",
+        "cliente@invalid-.example",
+        "cliente@\u0000.example",
+        "cliente@example.com/path",
+        "cliente@example.com?x",
+        "cliente@example.com#x",
+        "cliente@exa%6dple.com",
+        "cliente@example.com\\suffix",
+        "cliente@example .com",
+      ]) {
+        const request = makeAssessmentRequest();
+        const response = await app.inject({
+          method: "POST",
+          url: `/evaluations/${scenario}`,
+          payload: {
+            ...request,
+            applicant: { ...request.applicant, email_address: email },
+          },
+        });
+        expect(response.statusCode).toBe(400);
+      }
+    },
+  );
 
   it.each([
     { amount_cents: 0 }, { amount_cents: 1.5 }, { amount_cents: Number.MAX_SAFE_INTEGER + 1 },
@@ -93,4 +200,3 @@ describe("Bank B routes", () => {
     expect((await app.inject({ method: "POST", url: "/normal", payload: makeAssessmentRequest() })).statusCode).toBe(404);
   });
 });
-
