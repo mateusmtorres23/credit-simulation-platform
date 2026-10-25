@@ -25,6 +25,7 @@
   <a href="#executar">Como executar</a> ·
   <a href="#stack">Stack</a> ·
   <a href="#arquitetura">Arquitetura</a> ·
+  <a href="#modelagem">Modelagem de dados</a> ·
   <a href="#propostas">Propostas</a> ·
   <a href="#testes">Testes</a>
 </p>
@@ -202,9 +203,13 @@ As regras são determinísticas e pertencem às mocks. CPF e CNPJ validam soment
 
 ## Arquitetura e decisões técnicas
 
+### Serviços e comunicação
+
+O monorepo reúne quatro serviços de aplicação com dependências e builds próprios. As mocks representam instituições independentes; somente a API principal conhece seus contratos e acessa o PostgreSQL. No Compose, o Nginx do frontend entrega o build React e encaminha `/api`, mantendo uma única origem para o navegador.
+
 ```mermaid
 flowchart LR
-    browser["Navegador"] --> web["React + Nginx"]
+    browser["Navegador · React"] -->|"HTTP · arquivos e requisições"| web["Frontend · Nginx"]
     web -->|"/api"| api["API principal · FastAPI"]
     api -->|"HTTP · consulta concorrente"| bankA["Banco A · Fastify"]
     api -->|"HTTP · consulta concorrente"| bankB["Banco B · Fastify"]
@@ -218,37 +223,131 @@ flowchart LR
     class bankA,bankB,db dependency
 ```
 
-**Separação de responsabilidades.** Routers tratam HTTP; schemas validam os dados; services coordenam operações e transações; repositories concentram consultas; adapters traduzem a integração externa. Não há CRUD genérico ou infraestrutura de filas para o fluxo síncrono deste MVP.
+Cada mock recebe os mesmos dados de negócio em um formato próprio e aplica sua política fictícia de crédito. O frontend consome apenas o contrato consolidado da API, sem consultar bancos diretamente. Histórico, detalhe e exclusão operam sobre os dados salvos, sem novas avaliações bancárias.
 
-**Adapter por banco.** O Banco A recebe campos em camelCase e responde com `approved`; o Banco B recebe `applicant`/`loan` e responde com `decision.code`. Os adapters implementam o contrato comum `BankAdapter`, validam a resposta externa e produzem `approved`, `rejected` ou `failed`. Assim, a interface e a coordenação não dependem dos formatos bancários, e HTTP 200 com conteúdo inválido não é tratado como aprovação.
+O Compose aplica as migrações pelo serviço `migrate` antes de iniciar a API. A limpeza é um comando opt-in no perfil `maintenance`. Ambos reutilizam a imagem Python construída pela API, sem manter servidores adicionais ou agendar processamento em segundo plano.
 
-**Concorrência e falhas parciais.** `asyncio.TaskGroup` consulta os bancos simultaneamente. Cada consulta possui prazo total de comunicação configurável, incluindo leitura do corpo, sem retry automático. Uma falha esperada vira resultado individual e preserva a avaliação do outro banco. Esse prazo não limita a duração total do endpoint, que também valida e persiste dados.
+### Organização da API
 
-**Persistência antes do sucesso.** As chamadas externas ocorrem fora da transação de gravação. Depois, sessão, simulação, resultados e motivos são salvos atomicamente. A API só retorna `201` após commit; se não puder salvar, retorna `503 / SIMULATION_SAVE_FAILED`. Mesmo duas falhas bancárias podem compor uma simulação salva com sucesso.
+As responsabilidades ficam explícitas em módulos pequenos, com dependências recebidas pelos construtores:
 
-**Unidades explícitas.** Dinheiro trafega e é armazenado em centavos inteiros de BRL; taxas mensais usam pontos-base (`180 bps = 1,80%`). Isso evita usar valores monetários fracionários no contrato. A apresentação tem uma limitação conhecida em valores extremos, descrita adiante.
+| Camada em `credit-simulation-api/app/` | Responsabilidade |
+| --- | --- |
+| `routers/` | Validar corpo, query e identificador; chamar o service e emitir o cookie somente após criação confirmada |
+| `schemas/` | Definir entrada, paginação, resultados e erros públicos; rejeitar extras, tipos inadequados e combinações incompatíveis com o estado |
+| `services/` | Coordenar avaliações, sessão e transações; separar criação (`SimulationService`), histórico/exclusão (`SimulationHistoryService`) e credencial (`SessionService`) |
+| `repositories/` | Concentrar SQL, filtros de proprietário/expiração, paginação e carregamento dos relacionamentos, sem commit próprio |
+| `integrations/` | Traduzir e validar cada contrato bancário; aplicar timeout e normalizar falhas de comunicação |
+| `models/` | Mapear tabelas, relacionamentos, enums, constraints e índices do PostgreSQL |
+| `errors/` | Traduzir erros para envelopes públicos controlados, sem ecoar valores pessoais ou detalhes do banco |
 
-<details>
-<summary><strong>Modelagem de dados, sessão e segurança HTTP</strong></summary>
+`dependencies.py` monta os componentes com uma `AsyncSession` por requisição. O lifespan em `main.py` cria a engine, a fábrica de sessões e o cliente HTTPX compartilhado e encerra esses recursos ao desligar. Os adapters recebem o cliente HTTP, sem acesso à sessão de banco; a concorrência das avaliações não compartilha uma `AsyncSession` entre tarefas.
 
-O armazenamento possui quatro tabelas:
+Essa divisão permite testar contratos, coordenação e persistência separadamente. Repositories específicos atendem às consultas do produto, sem CRUD genérico ou Unit of Work adicional.
+
+### Fluxo de uma simulação
+
+1. **Validar e resolver a sessão.** O router recebe a entrada, e a proteção de Origin autoriza a escrita. O service resolve a credencial em uma transação curta de leitura e a encerra antes das consultas externas.
+2. **Consultar e consolidar.** `asyncio.TaskGroup` executa A e B concorrentemente. Cada adapter traduz o payload, consulta a mock e valida a resposta antes de produzir o resultado comum, preservando a ordem A/B.
+3. **Persistir e responder.** Em outra transação, o service revalida a sessão após adquirir seu lock ou prepara uma nova. Simulação, resultados, motivos e eventual sessão nova são salvos atomicamente. Somente após commit a API retorna `201` e, quando necessário, o novo cookie.
+
+Não há transação de persistência aberta durante a espera pelos bancos. Falhas conhecidas de armazenamento geram `503 / SIMULATION_SAVE_FAILED`, sem apresentar resultados como salvos. Duas falhas bancárias também podem compor uma simulação persistida: o salvamento e a decisão de crédito são resultados distintos.
+
+### Adapters, validação e falhas parciais
+
+`BankAdapter` é o contrato comum consumido pelo service, definido como um `Protocol` Python. Cada implementação traduz um serviço externo sem transferir suas particularidades para o restante da aplicação:
+
+| Integração | Entrada externa | Decisão externa | Resultado público |
+| --- | --- | --- | --- |
+| Banco A | Campos em camelCase | `approved` e `offer` ou `reasons` | `approved`, `rejected` ou `failed` |
+| Banco B | Objetos `applicant` e `loan` | `decision.code` e condições ou motivos | `approved`, `rejected` ou `failed` |
+
+Os adapters validam estrutura, tipos e limites mesmo quando a mock responde HTTP 200. Uma resposta incompatível vira `INVALID_BANK_RESPONSE`; motivos conhecidos são traduzidos para códigos comuns e mensagens em português. As decisões e condições pertencem às mocks: a API não recalcula ofertas nem escolhe um banco vencedor.
+
+Cada consulta possui prazo **total de comunicação de 5 segundos por padrão**, incluindo leitura do corpo, configurável e sem retry. Timeout, indisponibilidade e resposta inválida viram falhas individuais e preservam a avaliação disponível do outro banco. Erros inesperados propagam, e o `TaskGroup` cancela a outra tarefa; não são convertidos em reprovação. O prazo bancário não limita o endpoint inteiro, que também valida e persiste dados.
+
+Dinheiro trafega e é armazenado em centavos inteiros de BRL; taxas mensais usam pontos-base (`180 bps = 1,80%`). Na interface, reais inteiros e centavos são formatados separadamente, preservando inclusive o limite de `9007199254740991` centavos, sem arredondar o valor completo para reais fracionários.
+
+<a id="modelagem"></a>
+
+## Modelagem de dados
+
+O histórico utiliza quatro tabelas relacionais. O MER lógico abaixo apresenta colunas, tipos PostgreSQL, chaves e cardinalidades, alinhados aos [models](credit-simulation-api/app/models/) e à [migração inicial](credit-simulation-api/migrations/versions/6083b9172a38_create_credit_simulation_tables.py).
+
+### MER lógico
 
 ```mermaid
 erDiagram
     sessions ||--o{ simulations : possui
     simulations ||--|{ bank_results : possui
     bank_results ||--o{ bank_result_reasons : possui
+
+    sessions {
+        uuid id PK
+        bytea token_hash UK "NOT NULL; SHA-256 de 32 bytes"
+        timestamptz created_at "NOT NULL"
+        timestamptz expires_at "NOT NULL"
+    }
+    simulations {
+        uuid id PK
+        uuid session_id FK "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        bigint monthly_income_cents "NOT NULL"
+        bigint requested_amount_cents "NOT NULL"
+        smallint term_months "NOT NULL"
+    }
+    bank_results {
+        uuid id PK
+        uuid simulation_id FK "NOT NULL"
+        bank_enum bank "NOT NULL"
+        bank_result_status_enum status "NOT NULL"
+        bigint amount_cents "NULL conforme estado"
+        smallint term_months "NULL conforme estado"
+        bigint monthly_interest_rate_bps "NULL conforme estado"
+        bigint installment_cents "NULL conforme estado"
+        bank_error_code_enum error_code "NULL conforme estado"
+        text error_message "NULL conforme estado"
+    }
+    bank_result_reasons {
+        uuid id PK
+        uuid bank_result_id FK "NOT NULL"
+        rejection_code_enum code "NOT NULL"
+        text message "NOT NULL"
+        integer position "NOT NULL; a partir de zero"
+    }
 ```
 
-Cada simulação salva tem exatamente dois resultados, um por banco, garantidos pelo service; uma restrição única impede duplicar o mesmo banco na simulação. Chaves estrangeiras obrigatórias impedem filhos sem proprietário, e exclusões em cascata removem resultados e motivos. Motivos ficam em tabela própria, com código, mensagem e posição, permitindo constraints e preservação da ordem sem um documento JSONB opaco.
+`PK`, `FK` e `UK` indicam chave primária, estrangeira e única. Todas as PKs são UUIDv4 gerados na aplicação; os vínculos usam UUID obrigatório. Datas usam `TIMESTAMPTZ` e instantes UTC na aplicação. Os tipos enum restringem bancos, estados e códigos aos valores conhecidos do contrato.
+
+A cardinalidade genérica do diagrama não expressa toda a regra de negócio: **cada simulação salva deve ter exatamente dois resultados, A e B**. Schemas e service garantem essa completude; `UNIQUE (simulation_id, bank)` impede duplicar o banco na mesma simulação.
+
+### Integridade e decisões de armazenamento
+
+| Regra | Implementação e motivo |
+| --- | --- |
+| Credencial e validade | `token_hash` único com exatamente 32 bytes; `expires_at > created_at`. O token original não é persistido |
+| Valores e prazos | `BIGINT` para centavos e pontos-base, até `9007199254740991`; renda e oferta a partir de 1 centavo, valor solicitado a partir de 100; taxa a partir de zero. `SMALLINT` para prazos de 1 a 120 meses |
+| Coerência do resultado | Um `CHECK` exige oferta completa em aprovação, erro completo em falha e ambos ausentes na reprovação |
+| Motivos sem duplicação | `UNIQUE (bank_result_id, code)` e `UNIQUE (bank_result_id, position)`; posição não negativa e mensagem com conteúdo não branco |
+| Vínculos e exclusão | FKs com `NOT NULL` e `ON DELETE CASCADE`: remover uma simulação elimina resultados/motivos; remover uma sessão elimina seu histórico |
+
+Ofertas e erros ficam na própria linha de `bank_results`, com campos condicionais ao estado. Motivos ficam em tabela filha porque têm quantidade variável e exigem unicidade e ordem; isso permite constraints relacionais sem armazenar a lista em JSONB. A mensagem é preservada para representar o resultado daquela ocasião.
+
+Uma reprovação exige ao menos um motivo; aprovação e falha não possuem motivos. Essa regra entre tabelas é validada pelos schemas e pelo service, sem trigger adicional. A transação de gravação mantém o conjunto completo e atômico.
+
+O índice `simulations(session_id, created_at DESC, id DESC)` atende ao filtro por proprietário e à ordenação do histórico. `sessions(expires_at)` apoia a limpeza. As constraints únicas dos resultados e motivos também criam índices que atendem aos respectivos vínculos, evitando índices redundantes. A paginação continua usando `page`/`page_size`, com contagem antes da consulta de itens para evitar um `OFFSET` impossível em páginas extremas.
+
+### Dados conservados no histórico
 
 Somente renda mensal, valor solicitado e prazo são conservados da entrada, além dos resultados normalizados, IDs, datas e vínculo com a sessão. Nome, e-mail, CPF e CNPJ são validados e encaminhados aos bancos, sem persistência desses campos ou de respostas bancárias brutas. Os dados financeiros contextualizam a avaliação; a identificação não é necessária para consultar esse histórico. Essa minimização não torna os registros anônimos.
 
+## Sessões e segurança HTTP
+
 O histórico usa uma sessão anônima de **sete dias contados da criação**, sem renovação a cada simulação. O cookie `credit_session` contém um token aleatório; o banco armazena somente seu hash SHA-256. O cookie é HttpOnly, SameSite=Lax, restrito a `/api`, com Secure configurável. O acesso ao registro exige a sessão proprietária válida; conhecer o UUID não concede acesso.
 
-POST e DELETE exigem um `Origin` explicitamente permitido, e o CORS usa a mesma lista com credenciais. Erros públicos possuem mensagens controladas e a validação não repete os dados pessoais recebidos.
+As leituras de histórico e detalhe revalidam a expiração com horário atualizado após as consultas ao PostgreSQL. Se a sessão vencer durante uma espera por lock, o histórico retorna vazio, com total zero e paginação preservada; o detalhe retorna `404 / SIMULATION_NOT_FOUND`. As leituras não criam nem renovam sessões. Criação e exclusão revalidam a sessão após o lock de escrita. A remoção física dos registros expirados depende do comando manual de limpeza.
 
-</details>
+POST e DELETE exigem um `Origin` explicitamente permitido, e o CORS usa a mesma lista com credenciais. GET não exige Origin, mas o acesso aos registros continua dependendo da sessão. Erros públicos possuem mensagens controladas e a validação não repete os dados pessoais recebidos.
 
 <a id="propostas"></a>
 
@@ -361,16 +460,18 @@ O exemplo do frontend aponta para `http://localhost:8000`. Para desenvolver uma 
 
 ## Testes e validações
 
-Resultados da revisão registrada em **25/10/2026**, no commit **`8f70c06`**:
+Validações registradas em **25/10/2026**. API e frontend foram novamente verificados após as correções de expiração nas leituras e precisão monetária, na árvore de trabalho baseada em `d497b5c`:
 
 | Componente | Testes aprovados | Verificações adicionais registradas |
 | :--- | ---: | :--- |
-| API principal | **646** — 491 unitários e 155 de integração | Ruff e formatação |
+| API principal | **648** — 491 unitários e 157 de integração | Ruff e formatação; inclui regressões de leitura bloqueada com PostgreSQL real |
 | Banco A | **66** | Typecheck e build |
 | Banco B | **63** | Typecheck e build |
-| Frontend | **45** | Build e ESLint |
+| Frontend | **54** em quatro arquivos | Build e ESLint; inclui nove casos diretos de formatação monetária |
 
-São resultados daquela revisão, não uma nova execução durante a reformulação deste README. A integração pelo Compose/Nginx foi verificada por HTTP em etapa anterior; não há suíte permanente de navegador.
+As contagens das mocks permanecem da revisão de `8f70c06`; seus testes isolados, typecheck e build não foram repetidos na revisão das duas correções. Os dois novos testes HTTP de expiração também foram executados com a implementação anterior carregada apenas em memória: ambos falharam pelo comportamento esperado, confirmando a regressão. Uma sondagem complementar comparou 50 mil valores monetários com uma referência em `BigInt`, sem divergências; ela não integra a contagem da suíte.
+
+A integração pelo Compose/Nginx e o navegador foram verificados em auditoria anterior. Essa revisão das correções não repetiu esses cenários manuais; não há suíte permanente de navegador. A atualização deste README não representa outra execução dos testes.
 
 <details>
 <summary><strong>Comandos para executar as verificações</strong></summary>
@@ -406,7 +507,6 @@ npm run lint
 
 ## Limitações conhecidas
 
-- **Precisão na apresentação de valores extremos:** a formatação divide centavos por 100 usando `Number`. No máximo aceito, `9007199254740991` centavos, pode mostrar R$ 90.071.992.547.409,90 em vez de R$ 90.071.992.547.409,91. O achado afeta apresentação; não demonstrou alteração dos inteiros enviados ou persistidos. A correção está pendente.
 - **Sessão vinculada ao navegador:** não comprova identidade nem oferece recuperação. Os sete dias pertencem à sessão, não a cada registro; perder o cookie impede recuperar o acesso e não antecipa a limpeza.
 - **Reenvios e concorrência inicial:** não há idempotência. Reenviar pode criar outra simulação; perder a primeira resposta pode também perder o cookie. Primeiras criações simultâneas sem cookie podem gerar sessões distintas, ficando acessível o histórico da credencial que prevalecer no navegador.
 - **Persistência e concorrência:** perda de conexão exatamente durante commit não foi reproduzida; uma resposta de falha não garante ausência de gravação. Total e itens da paginação vêm de consultas separadas, podendo divergir sob alterações concorrentes.
