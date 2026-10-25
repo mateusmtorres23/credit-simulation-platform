@@ -37,9 +37,9 @@ function App() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="/" aria-label="Octafin, página inicial">
-          <span className="brand-mark" aria-hidden="true">O</span>
-          <span>octafin</span>
+        <a className="brand" href="/" aria-label="Simulacred, página inicial">
+          <span className="brand-mark" aria-hidden="true">S</span>
+          <span>Simulacred</span>
         </a>
         <nav aria-label="Navegação principal">
           <button className={`nav-link ${view === 'simulate' ? 'active' : ''}`} type="button" onClick={() => setView('simulate')}>Simular</button>
@@ -98,7 +98,7 @@ function App() {
       </main>
 
       <footer className="site-footer">
-        <p>Octafin · Simulação demonstrativa</p>
+        <p>Simulacred · Simulação demonstrativa</p>
       </footer>
     </div>
   )
