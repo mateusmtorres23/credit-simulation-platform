@@ -90,7 +90,7 @@ class SimulationHistoryService:
                     raise SimulationNotFound()
                 session = await self._sessions.revalidate_for_write(session.id, now=now)
                 if session is None or not await self._repository.delete_for_session(
-                    simulation_id, session.id, now=now
+                    simulation_id, session.id, now=self._sessions.current_time()
                 ):
                     raise SimulationNotFound()
         except (SQLAlchemyError, ConnectionRefusedError) as exc:

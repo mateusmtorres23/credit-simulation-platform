@@ -93,18 +93,22 @@ class SimulationService:
                 self._bank_b.evaluate(request, scenarios.bank_b_scenario)
             )
         now = datetime.now(UTC)
-        response = SimulationCreatedResponse(
-            id=uuid4(), created_at=now, results=[bank_a.result(), bank_b.result()]
+        results = [bank_a.result(), bank_b.result()]
+        validated = SimulationCreatedResponse(
+            id=uuid4(), created_at=now, results=results
         )
         try:
             async with self._db.begin():
                 prepared = await self._sessions.prepare_for_simulation(
                     session_id, now=now
                 )
+                response = validated.model_copy(
+                    update={"created_at": prepared.recorded_at}
+                )
                 simulation = Simulation(
                     id=response.id,
                     session=prepared.session,
-                    created_at=now,
+                    created_at=prepared.recorded_at,
                     monthly_income_cents=request.monthly_income_cents,
                     requested_amount_cents=request.requested_amount_cents,
                     term_months=request.term_months,

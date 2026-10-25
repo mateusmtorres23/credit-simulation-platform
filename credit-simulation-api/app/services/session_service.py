@@ -1,6 +1,7 @@
 import hashlib
 import re
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -17,6 +18,7 @@ class PreparedSession:
     """A staged session; disclose a new token only after the caller commits."""
 
     session: Session
+    recorded_at: datetime
     new_token: str | None = field(default=None, repr=False)
 
 
@@ -33,8 +35,17 @@ class SessionService:
     Finish any lookup transaction before awaiting external bank responses.
     """
 
-    def __init__(self, repository: SessionRepository) -> None:
+    def __init__(
+        self,
+        repository: SessionRepository,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._repository = repository
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    def current_time(self) -> datetime:
+        return _as_utc(self._clock())
 
     async def find_active(self, token: str | None, *, now: datetime) -> Session | None:
         """Resolve a browser credential without creating or renewing a session."""
@@ -47,10 +58,13 @@ class SessionService:
     async def revalidate_for_write(
         self, session_id: UUID, *, now: datetime
     ) -> Session | None:
-        """Refresh and lock an existing session in the caller's write transaction."""
-        return await self._repository.find_active_by_id(
+        """Lock and recheck an existing session after the lock is acquired."""
+        session = await self._repository.find_active_by_id(
             session_id, now=_as_utc(now), for_update=True
         )
+        if session is None or session.expires_at <= self.current_time():
+            return None
+        return session
 
     async def prepare_for_simulation(
         self, session_id: UUID | None, *, now: datetime
@@ -65,8 +79,9 @@ class SessionService:
         if session_id is not None:
             session = await self.revalidate_for_write(session_id, now=now)
             if session is not None:
-                return PreparedSession(session=session)
+                return PreparedSession(session=session, recorded_at=self.current_time())
 
+        now = self.current_time()
         token = secrets.token_urlsafe(32)
         session = Session(
             id=uuid4(),
@@ -75,4 +90,4 @@ class SessionService:
             expires_at=now + SESSION_LIFETIME,
         )
         self._repository.add(session)
-        return PreparedSession(session=session, new_token=token)
+        return PreparedSession(session=session, recorded_at=now, new_token=token)

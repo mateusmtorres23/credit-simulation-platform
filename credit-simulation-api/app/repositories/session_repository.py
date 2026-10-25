@@ -46,11 +46,10 @@ class SessionRepository:
         A lock coordinates writes with session deletion by cleanup. The service
         supplies the current instant and must keep the write transaction short.
         """
-        statement = (
-            select(Session)
-            .where(Session.id == session_id, Session.expires_at > now)
-            .execution_options(populate_existing=True)
-        )
+        statement = select(Session).where(Session.id == session_id)
+        if not for_update:
+            statement = statement.where(Session.expires_at > now)
+        statement = statement.execution_options(populate_existing=True)
         if for_update:
             statement = statement.with_for_update()
         return await self._db.scalar(statement)
