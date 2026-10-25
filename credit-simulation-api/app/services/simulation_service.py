@@ -81,7 +81,7 @@ class SimulationService:
                 session = await self._sessions.find_active(token, now=datetime.now(UTC))
                 if session is not None:
                     session_id = session.id
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, ConnectionRefusedError) as exc:
             raise SimulationSaveFailed() from exc
 
         # TaskGroup cancels the other request if an unexpected failure propagates.
@@ -121,6 +121,6 @@ class SimulationService:
                 )
             # The transaction context has confirmed commit before exposing a token.
             return created
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, ConnectionRefusedError) as exc:
             # A failed commit may be uncertain; do not claim the record cannot exist.
             raise SimulationSaveFailed() from exc

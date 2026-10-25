@@ -59,7 +59,7 @@ class SimulationHistoryService:
                     page_size=pagination.page_size,
                 )
             return response
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, ConnectionRefusedError) as exc:
             raise HistoryUnavailable() from exc
 
     async def get_detail(
@@ -78,7 +78,7 @@ class SimulationHistoryService:
                     raise SimulationNotFound()
                 response = simulation_detail(record)
             return response
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, ConnectionRefusedError) as exc:
             raise HistoryUnavailable() from exc
 
     async def delete(self, simulation_id: UUID, token: str | None) -> None:
@@ -93,5 +93,5 @@ class SimulationHistoryService:
                     simulation_id, session.id, now=now
                 ):
                     raise SimulationNotFound()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, ConnectionRefusedError) as exc:
             raise SimulationDeleteFailed() from exc
