@@ -385,6 +385,24 @@ Execute na raiz, com a imagem da API já construída e o banco disponível. O co
 
 
 
+## Propostas planejadas — prioridade para mais uma semana
+
+### 1. Automatizar a limpeza dos registros expirados
+
+**Problema:** o acesso expira, mas a remoção física depende de intervenção manual.
+
+**Proposta:** agendar a execução do comando de limpeza já implementado.
+
+**Por quê:** torna a remoção recorrente e reduz a dependência de uma pessoa lembrar de executar a manutenção.
+
+### 2. Recuperar o histórico entre dispositivos
+
+**Problema:** trocar de navegador ou perder o cookie impede recuperar o histórico anterior.
+
+**Proposta:** definir e implementar identificação e recuperação que permitam consultar o histórico em outros dispositivos.
+
+**Por quê:** oferece continuidade de acesso, exigindo definir cuidadosamente como comprovar a identidade e recuperar a credencial.
+
 ## API
 
 A documentação interativa da API (Swagger UI), disponível em localhost:8000/docs, apresenta os schemas e as respostas. As operações públicas são:
@@ -460,18 +478,18 @@ O exemplo do frontend aponta para `http://localhost:8000`. Para desenvolver uma 
 
 ## Testes e validações
 
-Validações registradas em **25/10/2026**. API e frontend foram novamente verificados após as correções de expiração nas leituras e precisão monetária, na árvore de trabalho baseada em `d497b5c`:
+Validações registradas em **25/10/2026**. Os resultados de API e frontend incluem as correções de expiração nas leituras e precisão monetária, verificadas na árvore de trabalho baseada em `d497b5c`:
 
 | Componente | Testes aprovados | Verificações adicionais registradas |
 | :--- | ---: | :--- |
-| API principal | **648** — 491 unitários e 157 de integração | Ruff e formatação; inclui regressões de leitura bloqueada com PostgreSQL real |
+| API principal | **648** — 491 unitários e 157 de integração | Ruff e formatação |
 | Banco A | **66** | Typecheck e build |
 | Banco B | **63** | Typecheck e build |
-| Frontend | **54** em quatro arquivos | Build e ESLint; inclui nove casos diretos de formatação monetária |
+| Frontend | **54** | Build e ESLint |
 
-As contagens das mocks permanecem da revisão de `8f70c06`; seus testes isolados, typecheck e build não foram repetidos na revisão das duas correções. Os dois novos testes HTTP de expiração também foram executados com a implementação anterior carregada apenas em memória: ambos falharam pelo comportamento esperado, confirmando a regressão. Uma sondagem complementar comparou 50 mil valores monetários com uma referência em `BigInt`, sem divergências; ela não integra a contagem da suíte.
+Os resultados das mocks são da revisão de `8f70c06` e não foram repetidos na validação dessas correções. A integração pelo Compose/Nginx e o navegador foram verificados em auditoria anterior; não há suíte permanente de navegador.
 
-A integração pelo Compose/Nginx e o navegador foram verificados em auditoria anterior. Essa revisão das correções não repetiu esses cenários manuais; não há suíte permanente de navegador. A atualização deste README não representa outra execução dos testes.
+As suítes cobrem contratos, integrações bancárias, persistência, isolamento de sessões e comportamento da interface. Esta seção registra verificações já realizadas; a atualização do README não representa uma nova execução dos testes.
 
 <details>
 <summary><strong>Comandos para executar as verificações</strong></summary>
