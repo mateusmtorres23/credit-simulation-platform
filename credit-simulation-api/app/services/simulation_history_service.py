@@ -42,16 +42,18 @@ class SimulationHistoryService:
                 items = []
                 total = 0
                 if session is not None:
-                    records = await self._repository.list_for_session(
-                        session.id,
-                        now=now,
-                        page=pagination.page,
-                        page_size=pagination.page_size,
-                    )
-                    items = [simulation_summary(record) for record in records]
                     total = await self._repository.count_for_session(
                         session.id, now=now
                     )
+                    pages = (total + pagination.page_size - 1) // pagination.page_size
+                    if pagination.page <= pages:
+                        records = await self._repository.list_for_session(
+                            session.id,
+                            now=now,
+                            page=pagination.page,
+                            page_size=pagination.page_size,
+                        )
+                        items = [simulation_summary(record) for record in records]
                 response = SimulationHistoryResponse(
                     items=items,
                     total=total,
