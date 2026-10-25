@@ -8,6 +8,7 @@ ApplicationErrorCode = Literal[
     "SIMULATION_NOT_FOUND",
     "HISTORY_UNAVAILABLE",
     "SIMULATION_DELETE_FAILED",
+    "REQUEST_FORBIDDEN",
 ]
 
 

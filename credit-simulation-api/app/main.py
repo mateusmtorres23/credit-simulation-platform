@@ -3,12 +3,17 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.database import create_database_engine, create_session_factory
+from app.errors import register_exception_handlers
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    # The middleware retains this list; populate it once settings load at startup.
+    allowed_origins: list[str] = []
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if settings is None:
@@ -17,6 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             app_settings = settings
         app.state.settings = app_settings
+        allowed_origins[:] = app_settings.allowed_origins
         engine = create_database_engine(app_settings)
         try:
             app.state.database_engine = engine
@@ -30,7 +36,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await engine.dispose()
 
-    return FastAPI(lifespan=lifespan)
+    application = FastAPI(lifespan=lifespan)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Content-Type"],
+    )
+    register_exception_handlers(application)
+    return application
 
 
 app = create_app()

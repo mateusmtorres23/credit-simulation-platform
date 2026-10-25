@@ -32,3 +32,9 @@ class SimulationDeleteFailed(ApplicationException):
     status_code = 503
     code: ApplicationErrorCode = "SIMULATION_DELETE_FAILED"
     message = "Não foi possível excluir a simulação. Tente novamente mais tarde."
+
+
+class RequestForbidden(ApplicationException):
+    status_code = 403
+    code: ApplicationErrorCode = "REQUEST_FORBIDDEN"
+    message = "A origem da solicitação não é permitida."
